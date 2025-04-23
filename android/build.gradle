@@ -26,7 +26,8 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 23
+    namespace = 'in.appyflow.paytm'
+    compileSdkVersion = 23
 
     defaultConfig {
         minSdkVersion 23
