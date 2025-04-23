@@ -26,15 +26,20 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 23
+    compileSdk 34
+    
     if (project.android.hasProperty("namespace")) {
         namespace "in.appyflow.paytm"
     }
+
+    compileSdkVersion 34
+    
     defaultConfig {
         minSdkVersion 23
     }
     lintOptions {
         disable 'InvalidPackage'
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
 }
 
