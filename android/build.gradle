@@ -36,10 +36,10 @@ android {
     
     defaultConfig {
         minSdkVersion 23
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
     lintOptions {
         disable 'InvalidPackage'
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
 }
 
