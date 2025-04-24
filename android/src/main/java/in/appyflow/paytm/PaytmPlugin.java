@@ -11,9 +11,6 @@ import com.paytm.pgsdk.PaytmOrder;
 import com.paytm.pgsdk.PaytmPaymentTransactionCallback;
 import com.paytm.pgsdk.TransactionManager;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -30,72 +27,54 @@ import io.flutter.plugin.common.MethodChannel.Result;
  * PaytmPlugin
  */
 public class PaytmPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
-
     private static final int PAYTM_REQUEST_CODE = 7567;
     private MethodChannel channel;
-    private static final String TAG = PaytmPlugin.class.getName();
+    private static final String TAG = "PaytmPlugin";
     private static Result flutterResult;
     private static Activity activity;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-        // Setup MethodChannel when plugin is attached to the engine
-        channel = new MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "paytm");
+        channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "paytm");
         channel.setMethodCallHandler(this);
     }
 
-    // Handle method calls from Flutter
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         flutterResult = result;
 
         if (call.method.equals("payWithPaytm")) {
-            String mId = call.argument("mId").toString();
-            String orderId = call.argument("orderId").toString();
-            String txnToken = call.argument("txnToken").toString();
-            String txnAmount = call.argument("txnAmount").toString();
+            String mId = call.argument("mId");
+            String orderId = call.argument("orderId");
+            String txnToken = call.argument("txnToken");
+            String txnAmount = call.argument("txnAmount");
             String callBackUrl = call.argument("callBackUrl");
-            boolean isStaging = call.argument("isStaging");
-            boolean appInvokeEnabled = call.argument("appInvokeEnabled");
+            boolean isStaging = Boolean.TRUE.equals(call.argument("isStaging"));
+            boolean appInvokeEnabled = Boolean.TRUE.equals(call.argument("appInvokeEnabled"));
+
             beginPayment(mId, orderId, txnToken, txnAmount, callBackUrl, isStaging, appInvokeEnabled);
         } else {
             result.notImplemented();
         }
     }
 
-    // Initiates payment via Paytm SDK
     private void beginPayment(String mId, String orderId, String txnToken, String txnAmount, String callBackUrl, boolean isStaging, boolean appInvokeEnabled) {
         String host = isStaging ? "https://securegw-stage.paytm.in/" : "https://securegw.paytm.in/";
-
         String callback = (callBackUrl == null || callBackUrl.trim().isEmpty())
                 ? host + "theia/paytmCallback?ORDER_ID=" + orderId
                 : callBackUrl;
 
         PaytmOrder paytmOrder = new PaytmOrder(orderId, mId, txnToken, txnAmount, callback);
 
-        Log.i(TAG, paytmOrder.toString());
-
         TransactionManager transactionManager = new TransactionManager(paytmOrder, new PaytmPaymentTransactionCallback() {
             @Override
             public void onTransactionResponse(Bundle bundle) {
-                Log.i(TAG, bundle.toString());
-                Map<String, Object> paramMap = new HashMap<>();
-                Map<String, Object> responseMap = new HashMap<>();
-                for (String key : bundle.keySet()) {
-                    responseMap.put(key, bundle.getString(key));
-                }
-
-                paramMap.put("error", false);
-                paramMap.put("response", responseMap);
-                sendResponse(paramMap);
+                sendResponse(buildSuccessMap(bundle));
             }
 
             @Override
             public void networkNotAvailable() {
-                Map<String, Object> paramMap = new HashMap<>();
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", "Network Not Available");
-                sendResponse(paramMap);
+                sendResponse(buildErrorMap("Network Not Available"));
             }
 
             @Override
@@ -103,46 +82,29 @@ public class PaytmPlugin implements FlutterPlugin, MethodCallHandler, ActivityAw
 
             @Override
             public void clientAuthenticationFailed(String s) {
-                Map<String, Object> paramMap = new HashMap<>();
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", s);
-                sendResponse(paramMap);
+                sendResponse(buildErrorMap(s));
             }
 
             @Override
             public void someUIErrorOccurred(String s) {
-                Map<String, Object> paramMap = new HashMap<>();
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", s);
-                sendResponse(paramMap);
+                sendResponse(buildErrorMap(s));
             }
 
             @Override
-            public void onErrorLoadingWebPage(int i, String s, String s1) {
-                Map<String, Object> paramMap = new HashMap<>();
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", s + " , " + s1);
-                sendResponse(paramMap);
+            public void onErrorLoadingWebPage(int code, String msg, String fallbackUrl) {
+                sendResponse(buildErrorMap(msg + " , " + fallbackUrl));
             }
 
             @Override
             public void onBackPressedCancelTransaction() {
-                Map<String, Object> paramMap = new HashMap<>();
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", "Back Pressed Transaction Cancelled");
-                sendResponse(paramMap);
+                sendResponse(buildErrorMap("Back Pressed Transaction Cancelled"));
             }
 
             @Override
-            public void onTransactionCancel(String s, Bundle bundle) {
-                Log.i(TAG, s + bundle.toString());
-                Map<String, Object> paramMap = new HashMap<>();
-                for (String key : bundle.keySet()) {
-                    paramMap.put(key, bundle.getString(key));
-                }
-
+            public void onTransactionCancel(String msg, Bundle bundle) {
+                Map<String, Object> paramMap = buildSuccessMap(bundle);
                 paramMap.put("error", true);
-                paramMap.put("errorMessage", s);
+                paramMap.put("errorMessage", msg);
                 sendResponse(paramMap);
             }
         });
@@ -152,9 +114,29 @@ public class PaytmPlugin implements FlutterPlugin, MethodCallHandler, ActivityAw
         transactionManager.startTransaction(activity, PAYTM_REQUEST_CODE);
     }
 
-    // Send response back to Flutter
+    private Map<String, Object> buildSuccessMap(Bundle bundle) {
+        Map<String, Object> responseMap = new HashMap<>();
+        for (String key : bundle.keySet()) {
+            responseMap.put(key, bundle.getString(key));
+        }
+        Map<String, Object> resultMap = new HashMap<>();
+        resultMap.put("error", false);
+        resultMap.put("response", responseMap);
+        return resultMap;
+    }
+
+    private Map<String, Object> buildErrorMap(String errorMsg) {
+        Map<String, Object> resultMap = new HashMap<>();
+        resultMap.put("error", true);
+        resultMap.put("errorMessage", errorMsg);
+        return resultMap;
+    }
+
     private static void sendResponse(Map<String, Object> paramMap) {
-        flutterResult.success(paramMap);
+        if (flutterResult != null) {
+            flutterResult.success(paramMap);
+            flutterResult = null;
+        }
     }
 
     @Override
@@ -162,30 +144,28 @@ public class PaytmPlugin implements FlutterPlugin, MethodCallHandler, ActivityAw
         channel.setMethodCallHandler(null);
     }
 
-    // Handle activity result (for Paytm transaction result)
-    @Override
-    public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
-        Log.i(TAG, "onActivityResult");
-        if (requestCode == PAYTM_REQUEST_CODE && data != null) {
-            Map<String, Object> paramMap = new HashMap<>();
-            if (data.getStringExtra("response") != null && data.getStringExtra("response").length() > 0) {
-                paramMap.put("error", false);
-                for (String key : Objects.requireNonNull(data.getExtras()).keySet()) {
-                    paramMap.put(key, data.getExtras().getString(key));
-                }
-            } else {
-                paramMap.put("error", true);
-                paramMap.put("errorMessage", data.getStringExtra("nativeSdkForMerchantMessage"));
-            }
-            sendResponse(paramMap);
-        }
-        return false;
-    }
-
+    // Handle activity lifecycle
     @Override
     public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
         activity = binding.getActivity();
-        binding.addActivityResultListener(this);
+
+        binding.addActivityResultListener((requestCode, resultCode, data) -> {
+            if (requestCode == PAYTM_REQUEST_CODE && data != null) {
+                Map<String, Object> paramMap = new HashMap<>();
+                if (data.getStringExtra("response") != null && !data.getStringExtra("response").isEmpty()) {
+                    paramMap.put("error", false);
+                    for (String key : Objects.requireNonNull(data.getExtras()).keySet()) {
+                        paramMap.put(key, data.getExtras().getString(key));
+                    }
+                } else {
+                    paramMap.put("error", true);
+                    paramMap.put("errorMessage", data.getStringExtra("nativeSdkForMerchantMessage"));
+                }
+                sendResponse(paramMap);
+                return true;
+            }
+            return false;
+        });
     }
 
     @Override
@@ -196,7 +176,7 @@ public class PaytmPlugin implements FlutterPlugin, MethodCallHandler, ActivityAw
     @Override
     public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
         activity = binding.getActivity();
-        binding.addActivityResultListener(this);
+        onAttachedToActivity(binding);
     }
 
     @Override
